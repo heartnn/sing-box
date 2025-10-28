@@ -18,7 +18,7 @@ NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org")
 SUBSCRIBE_TEMPLATE="https://raw.githubusercontent.com/fscarmen/client_template/main"
-DEFAULT_NEWEST_VERSION='1.12.0-beta.15'
+DEFAULT_NEWEST_VERSION='1.12.4'
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -791,21 +791,37 @@ check_system_info() {
 
 # 获取 sing-box 最新版本
 get_sing_box_version() {
-  # FORCE_VERSION 用于在 sing-box 某个主程序出现 bug 时，强制为指定版本，以防止运行出错
-  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sing-box/refs/heads/main/force_version | sed 's/^[vV]//g; s/\r//g')
-  if grep -q '.' <<< "$FORCE_VERSION"; then
-    local RESULT_VERSION="$FORCE_VERSION"
-  else
-    # 先判断 github api 返回 http 状态码是否为 200，有时候 IP 会被限制，导致获取不到最新版本
-    local API_RESPONSE=$(wget --no-check-certificate --server-response --tries=2 --timeout=3 -qO- "${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases" 2>&1 | grep -E '^[ ]+HTTP/|tag_name')
-    if grep -q 'HTTP.* 200' <<< "$API_RESPONSE"; then
-      local VERSION_LATEST=$(awk -F '["v-]' '/tag_name/{print $5}' <<< "$API_RESPONSE" | sort -Vr | sed -n '1p')
-      local RESULT_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- ${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases | awk -F '["v]' -v var="tag_name.*$VERSION_LATEST" '$0 ~ var {print $5; exit}')
-    else
-      local RESULT_VERSION="$DEFAULT_NEWEST_VERSION"
-    fi
+  local RESULT_VERSION
+
+  # 通过 GitHub API 获取最新正式版
+  RESULT_VERSION=$(wget --no-check-certificate --tries=2 --timeout=10 -qO- "${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases" 2>/dev/null | awk '
+  BEGIN { found_target = 0; }
+  found_target { exit; }
+  /"tag_name"/ {
+      match($0, /"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"/);
+      if (RSTART > 0) {
+          tag_match = substr($0, RSTART, RLENGTH);
+          gsub(/^"tag_name"[[:space:]]*:[[:space:]]*"/, "", tag_match);
+          gsub(/"$/, "", tag_match);
+          gsub(/^v/, "", tag_match);
+
+          temp_tag = tag_match;
+          gsub(/[0-9.]/, "", temp_tag);
+          if (temp_tag == "" && tag_match != "") {
+              print tag_match;
+              found_target = 1;
+              exit;
+          }
+      }
+  }
+  ' 2>/dev/null)
+
+  if [ -n "$RESULT_VERSION" ]; then
+      echo "$RESULT_VERSION"
+      return 0
   fi
-  echo "$RESULT_VERSION"
+
+  echo "$DEFAULT_NEWEST_VERSION"
 }
 
 # 添加端口跳跃
